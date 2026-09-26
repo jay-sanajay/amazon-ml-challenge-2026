@@ -81,14 +81,14 @@ def calculate_features(cands):
 # 4. CHUNK PROCESSING
 def build_dataset(s1_path, s2_path, s3_path, is_train=False, gt_df=None):
     s1_accum = []
-    for chunk in pd.read_csv(s1_path, sep="\t", dtype=str, usecols=["entity_id", "business_name", "business_address", "country"], chunksize=100000):
+    for chunk in pd.read_csv(s1_path, sep="\t", dtype=str, chunksize=100000, quoting=3):
         s1_accum.append(clean_data(chunk))
     s1 = pd.concat(s1_accum, ignore_index=True)
     del s1_accum; gc.collect()
     
     features_list = []
     for path in [s2_path, s3_path]:
-        for chunk in pd.read_csv(path, sep="\t", dtype=str, usecols=["entity_id", "business_name", "business_address", "country"], chunksize=100000):
+        for chunk in pd.read_csv(path, sep="\t", dtype=str, chunksize=100000, quoting=3):
             c_df = clean_data(chunk)
             cands = block_chunk(s1, c_df)
             del c_df; gc.collect()
