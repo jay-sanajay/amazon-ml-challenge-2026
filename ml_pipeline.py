@@ -60,8 +60,10 @@ def extract_numbers(s):
     return set(re.findall(r"\d+", str(s)))
 
 def calculate_features(cands):
+    from rapidfuzz import fuzz
+    
     def fast_sim(l1, l2):
-        return [SequenceMatcher(None, str(a), str(b)).quick_ratio() for a, b in zip(l1, l2)]
+        return [fuzz.ratio(str(a), str(b)) / 100.0 for a, b in zip(l1, l2)]
     
     cands["name_sim"] = fast_sim(cands["name_clean_x"], cands["name_clean_y"])
     cands["addr_sim"] = fast_sim(cands["addr_clean_x"], cands["addr_clean_y"])
