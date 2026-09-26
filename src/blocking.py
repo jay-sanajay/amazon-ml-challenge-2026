@@ -3,24 +3,30 @@ import gc
 
 def generate_candidates(df_s1, df_s2_s3):
     """
-    Dictionary blocking with explicit Cartesian explosion prevention.
-    Limits the maximum frequency of block keys to prevent OOM.
+    Extremely low-memory dictionary blocking.
     """
     def prep_keys(df):
-        df = df.copy()
+        # Create a lightweight dataframe to hold only the merge keys
+        keys_df = pd.DataFrame()
+        keys_df["entity_id"] = df["entity_id"]
+        keys_df["country"] = df["country"]
+        
         name_clean = df["business_name"].str.lower().str.replace(r"[^\w\s]", "", regex=True).str.strip()
-        addr_clean = df["business_address"].str.lower().str.replace(r"[^\w\s]", "", regex=True).str.strip()
-        
         name_splits = name_clean.str.split()
-        df["name_w1"] = name_splits.str[0].fillna("")
-        df["name_w2"] = name_splits.str[1].fillna("")
+        keys_df["name_w1"] = name_splits.str[0].fillna("")
+        keys_df["name_w2"] = name_splits.str[1].fillna("")
+        del name_clean, name_splits
         
+        addr_clean = df["business_address"].str.lower().str.replace(r"[^\w\s]", "", regex=True).str.strip()
         addr_splits = addr_clean.str.split()
-        df["addr_w1"] = addr_splits.str[0].fillna("")
+        keys_df["addr_w1"] = addr_splits.str[0].fillna("")
+        del addr_clean, addr_splits
         
-        df["zipcode"] = df["business_address"].str.extract(r"(\b\d{5,6}\b)")
-        df["zipcode"] = df["zipcode"].fillna("")
-        return df
+        keys_df["zipcode"] = df["business_address"].str.extract(r"(\b\d{5,6}\b)")
+        # In-place fillna to prevent Pandas from making a copy of the array and crashing OOM
+        keys_df["zipcode"] = keys_df["zipcode"].fillna("")
+        
+        return keys_df
 
     s1 = prep_keys(df_s1)
     s23 = prep_keys(df_s2_s3)
@@ -29,8 +35,9 @@ def generate_candidates(df_s1, df_s2_s3):
         b1 = s1[s1[keys].notna().all(axis=1) & (s1[keys] != "").all(axis=1)]
         b2 = s23[s23[keys].notna().all(axis=1) & (s23[keys] != "").all(axis=1)]
         
-        # PREVENT CARTESIAN EXPLOSION: 
-        # Count frequency of keys in B2 and drop overly common ones (e.g., generic words like "the")
+        if len(b2) == 0:
+            return pd.DataFrame(columns=["entity_id_x", "entity_id_y"])
+            
         key_counts = b2.groupby(keys).size()
         valid_keys = key_counts[key_counts <= max_freq].index
         
@@ -46,7 +53,11 @@ def generate_candidates(df_s1, df_s2_s3):
     p2 = block(["country", "name_w1", "name_w2"])
     p3 = block(["country", "name_w1", "zipcode"])
     
-    candidates = pd.concat([p1, p2, p3]).drop_duplicates()
+    if len(p1) == 0 and len(p2) == 0 and len(p3) == 0:
+        candidates = pd.DataFrame(columns=["source1_entity_id", "candidate_entity_id"])
+    else:
+        candidates = pd.concat([p1, p2, p3], ignore_index=True).drop_duplicates()
+        
     candidates["blocking_score"] = 1.0 
     
     del s1, s23, p1, p2, p3
