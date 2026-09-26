@@ -19,7 +19,8 @@ def clean_data(df):
     df["zipcode"] = df["zipcode"].fillna("")
     
     df["country"] = df["country"].fillna("UNKNOWN")
-    return df[["entity_id", "country", "name_w1", "name_w2", "zipcode", "name_clean", "addr_clean"]]
+    df["addr_w1"] = df["addr_clean"].str.split().str[0].fillna("")
+    return df[["entity_id", "country", "name_w1", "name_w2", "zipcode", "name_clean", "addr_clean", "addr_w1"]]
 
 def process_chunk(chunk_path, s1_df, all_matches):
     print(f"Processing {os.path.basename(chunk_path)}...")
@@ -50,10 +51,14 @@ def process_chunk(chunk_path, s1_df, all_matches):
                 return pd.merge(m1[cols1], m2[cols2], on=keys)
             return pd.DataFrame()
 
-        p1 = block(["country", "name_w1", "name_w2"])
-        p2 = block(["country", "name_w1", "zipcode"])
+        p1 = block(["country", "name_w1", "name_w2"], max_freq=500)
+        p2 = block(["country", "name_w1", "zipcode"], max_freq=500)
+        p3 = block(["country", "name_clean"], max_freq=2000)
         
-        cands_list = [p for p in [p1, p2] if not p.empty]
+        # Catch businesses with name typos but exact address matches
+        p4 = block(["country", "addr_w1", "zipcode"], max_freq=500)
+        
+        cands_list = [p for p in [p1, p2, p3, p4] if not p.empty]
         if not cands_list:
             del c_df
             gc.collect()
@@ -61,27 +66,18 @@ def process_chunk(chunk_path, s1_df, all_matches):
             
         cands = pd.concat(cands_list, ignore_index=True).drop_duplicates(subset=["entity_id_x", "entity_id_y"])
         
-        # Fast Jaccard Math
-        n1_sets = cands["name_clean_x"].str.split().apply(set)
-        n2_sets = cands["name_clean_y"].str.split().apply(set)
-        a1_sets = cands["addr_clean_x"].str.split().apply(set)
-        a2_sets = cands["addr_clean_y"].str.split().apply(set)
+        # Highly accurate fuzzy string matching
+        from difflib import SequenceMatcher
+        def fast_sim(list1, list2):
+            return [SequenceMatcher(None, a, b).quick_ratio() for a, b in zip(list1, list2)]
+            
+        cands["name_score"] = fast_sim(cands["name_clean_x"], cands["name_clean_y"])
+        cands["addr_score"] = fast_sim(cands["addr_clean_x"], cands["addr_clean_y"])
         
-        n_inter = [len(a & b) for a, b in zip(n1_sets, n2_sets)]
-        n_union = [len(a | b) for a, b in zip(n1_sets, n2_sets)]
-        cands["name_score"] = [i / u if u > 0 else 0 for i, u in zip(n_inter, n_union)]
-        
-        a_inter = [len(a & b) for a, b in zip(a1_sets, a2_sets)]
-        a_union = [len(a | b) for a, b in zip(a1_sets, a2_sets)]
-        cands["addr_score"] = [i / u if u > 0 else 0 for i, u in zip(a_inter, a_union)]
-        
-        # BALANCE RECALL AND PRECISION TO HIT 0.99
-        # Name score >= 0.50 (e.g. "The Home Depot" vs "Home Depot" is 0.66)
-        # Addr score >= 0.25 (e.g. "123 Main St" vs "123 Main Street" is 0.40)
-        # Or near-perfect name match (0.75+) regardless of address
+        # To hit 100% accuracy, demand exceptionally high spelling similarity
         strict_match = cands[
-            (cands["name_score"] >= 0.80) | 
-            ((cands["name_score"] >= 0.50) & (cands["addr_score"] >= 0.25))
+            (cands["name_score"] >= 0.90) | 
+            ((cands["name_score"] >= 0.75) & (cands["addr_score"] >= 0.75))
         ]
         
         if len(strict_match) > 0:
