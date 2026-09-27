@@ -210,7 +210,7 @@ def main():
     final_out = s1_ids.merge(cand_out, on="source1_entity_id", how="left")
     final_out["matched_entity_ids"] = final_out["matched_entity_ids"].fillna("")
     
-    final_out.to_csv(os.path.join(OUT_DIR, "matching_results.tsv"), sep="\t", index=False)
+    final_out.to_csv(os.path.join(OUT_DIR, "matching.tsv"), sep="\t", index=False)
     final_out.rename(columns={"matched_entity_ids": "candidate_entity_ids"}).to_csv(os.path.join(OUT_DIR, "candidate_pairs.tsv"), sep="\t", index=False)
     print("DONE! ML pipeline completed successfully.")
 
