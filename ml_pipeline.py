@@ -178,10 +178,11 @@ def main():
         is_train=True, gt_df=train_gt
     )
     
-    print("--- 2. TRAINING AI MODEL ---")
+    print("--- 2. TRAINING AI MODEL (RANDOM FOREST) ---")
     X_train = train_features[["name_sim", "addr_sim", "num_overlap"]]
     y_train = train_features["label"]
-    model = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.1, max_depth=5, random_state=42)
+    from sklearn.ensemble import RandomForestClassifier
+    model = RandomForestClassifier(n_estimators=150, max_depth=15, n_jobs=-1, random_state=42, class_weight='balanced')
     model.fit(X_train, y_train)
     
     print("--- 3. HYPERTUNING ---")
